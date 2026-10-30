@@ -1009,10 +1009,11 @@ class PelicanFileSystem(AsyncFileSystem):
                 if isdir and not full_path.endswith("/"):
                     full_path += "/"
                 modtimestr = item["modified"]
-                modtime = None if modtimestr == "None" else datetime.strptime(modtimestr, "%a, %d %b %Y %H:%M:%S %Z")
+                # aiowebdav2 gives "" for a missing property
+                modtime = None if modtimestr in {"", "None"} else datetime.strptime(modtimestr, "%a, %d %b %Y %H:%M:%S %Z")
                 return {
                     "name": full_path,
-                    "size": int(item["size"]),
+                    "size": int(item["size"] or 0),
                     "type": "directory" if isdir else "file",
                     "modified": modtime,
                 }
@@ -1309,7 +1310,7 @@ class PelicanFileSystem(AsyncFileSystem):
         msg = "makedirs is not supported: Pelican collections are created implicitly by uploading objects with put() or pipe()."
         raise NotImplementedError(msg)
 
-    def open(self, path: str, mode: str, **kwargs: Any) -> Any:
+    def open(self, path: str, mode: str = "rb", **kwargs: Any) -> Any:
         path = self._check_fspath(path)
 
         # Check if this is a write mode (w, wb, a, ab, x, xb, w+, r+, etc.)

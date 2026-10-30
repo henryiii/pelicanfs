@@ -460,3 +460,40 @@ def test_ls_from_http_awaits_token_generation(httpserver: HTTPServer, get_client
     names = [entry["name"] for entry in listing]
     assert f"{collections_url}/folder2/file1.md" in names, "the token-gated PROPFIND did not match, so the listing went out unauthenticated"
     assert f"{collections_url}/folder2/file2.md" in names
+
+
+def test_ls_detail_without_size_or_modified(httpserver: HTTPServer, get_client, get_webdav_client):
+    """A listing entry without getcontentlength or getlastmodified must not break ls."""
+    foo_bar_url = httpserver.url_for("foo/bar")
+
+    httpserver.expect_request("/.well-known/pelican-configuration").respond_with_json({"director_endpoint": httpserver.url_for("/")})
+    httpserver.expect_oneshot_request("/foo/bar").respond_with_data(
+        "",
+        status=307,
+        headers={
+            "Link": f'<{foo_bar_url}>; rel="duplicate"; pri=1; depth=1',
+            "X-Pelican-Namespace": f"namespace=/foo, collections-url={foo_bar_url}",
+        },
+    )
+    listing = """<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+  <D:response>
+    <D:href>/foo/bar/</D:href>
+    <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/foo/bar/sub/</D:href>
+    <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+  </D:response>
+</D:multistatus>
+"""
+    httpserver.expect_request("/foo/bar/", method="PROPFIND").respond_with_data(listing, status=207)
+
+    pelfs = pelicanfs.core.PelicanFileSystem(
+        httpserver.url_for("/"),
+        get_client=get_client,
+        skip_instance_cache=True,
+        get_webdav_client=get_webdav_client,
+    )
+
+    assert pelfs.ls("/foo/bar", detail=True) == [{"name": "/foo/bar/sub/", "size": 0, "type": "directory", "modified": None}]

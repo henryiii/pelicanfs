@@ -258,3 +258,29 @@ def test_io_wrapper_error_handling():
     # This should raise IOError, not AttributeError
     with pytest.raises(IOError, match="Simulated read failure"):
         wrapped_read()
+
+
+def test_open_default_mode(httpserver: HTTPServer, get_client):
+    """open() defaults to "rb", like fsspec's AbstractFileSystem.open."""
+    foo_bar_url = httpserver.url_for("/foo/bar")
+    httpserver.expect_request("/.well-known/pelican-configuration").respond_with_json({"director_endpoint": httpserver.url_for("/")})
+    httpserver.expect_oneshot_request("/foo/bar", method="GET").respond_with_data(
+        "",
+        status=307,
+        headers={
+            "Link": f'<{foo_bar_url}>; rel="duplicate"; pri=1; depth=1',
+            "Location": foo_bar_url,
+            "X-Pelican-Namespace": "namespace=/foo",
+        },
+    )
+    httpserver.expect_request("/foo/bar", method="HEAD").respond_with_data("hello, world!")
+    httpserver.expect_request("/foo/bar", method="GET").respond_with_data("hello, world!")
+
+    pelfs = PelicanFileSystem(
+        httpserver.url_for("/"),
+        get_client=get_client,
+        skip_instance_cache=True,
+    )
+
+    with pelfs.open("/foo/bar") as f:
+        assert f.read() == b"hello, world!"
